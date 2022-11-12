@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -11,8 +12,11 @@
 
 namespace {
 
+constexpr double kAspect = 9.0 / 16.0;
+
 EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context;
-int canvas_width, canvas_height;
+int canvas_width, canvas_height, viewport_width, viewport_height;
+double device_pixel_ratio;
 GLuint buffer;
 GLuint quad_shader;
 
@@ -38,7 +42,9 @@ public:
 
   void draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) {
     glUseProgram(program_);
-    GLfloat matrix[] = {w, 0.0f, 0.0f, 0.0f, h, 0.0f, x, y, 1.0f};
+    constexpr GLfloat kXScale = 2.0f;
+    constexpr GLfloat kYScale = kAspect * 2.0f;
+    GLfloat matrix[] = {w * kXScale, 0.0f, 0.0f, 0.0f, h * kYScale, 0.0f, x * kXScale, y * kYScale, 1.0f};
     glUniformMatrix3fv(matrix_location_, 1, false, matrix);
     glEnableVertexAttribArray(vertex_location_);
     glVertexAttribPointer(vertex_location_, 2, GL_FLOAT, false, 0, nullptr);
@@ -54,6 +60,12 @@ private:
 };
 
 std::unique_ptr<shader_program> backdrop_program;
+std::unique_ptr<shader_program> paddle_program;
+
+constexpr float kPaddleWidth = 0.2f;
+constexpr float kPaddleHeight = 0.05f;
+
+double player_position = 0.0;
 
 EM_BOOL main_loop (double time, void* user_data) {
   static double last_time = time;
@@ -64,7 +76,9 @@ EM_BOOL main_loop (double time, void* user_data) {
 
   glClear(GL_COLOR_BUFFER_BIT);
 
-  backdrop_program->draw_quad(0.5f, 0.5f, 0.5f, 0.5f);
+  backdrop_program->draw_quad(0.0f, 0.0f, 1.0f, 1.0f / kAspect);
+
+  paddle_program->draw_quad(player_position, -0.5f / kAspect + kPaddleHeight * 0.5f, kPaddleWidth, kPaddleHeight);
 
   return true;
 }
@@ -74,13 +88,42 @@ EM_BOOL on_canvas_resized (int event_type, const void* reserved, void* user_data
 
   emscripten_webgl_make_context_current(context);
 
-  glViewport(0, 0, canvas_width, canvas_height);
+  auto canvas_aspect = (double)canvas_width / canvas_height;
+  if (canvas_aspect > kAspect) {
+    viewport_width = (int)(canvas_height * kAspect);
+    viewport_height = canvas_height;
+    glViewport((canvas_width - viewport_width) / 2, 0, viewport_width, viewport_height);
+  } else {
+    viewport_width = canvas_width;
+    viewport_height = (int)(canvas_width / kAspect);
+    glViewport(0, (canvas_height - viewport_height) / 2, viewport_width, viewport_height);
+  }
 
   return true;
 }
 
 EM_BOOL on_mouse_move (int event_type, const EmscriptenMouseEvent* mouse_event, void* user_data) {
+  EmscriptenPointerlockChangeEvent pointerlock_event;
+  emscripten_get_pointerlock_status(&pointerlock_event);
 
+  if (pointerlock_event.isActive) {
+    player_position += mouse_event->movementX * device_pixel_ratio / viewport_width;
+  } else {
+    player_position = (mouse_event->targetX * device_pixel_ratio - canvas_width / 2.0) / viewport_width;
+  }
+
+  constexpr double kMaxPos = (1.0 + kPaddleWidth) * 0.5;
+  player_position = std::min(std::max(player_position, -kMaxPos), kMaxPos);
+
+  return true;
+}
+
+EM_BOOL on_mouse_down (int event_type, const EmscriptenMouseEvent* mouse_event, void* user_data) {
+  EmscriptenPointerlockChangeEvent pointerlock_event;
+  emscripten_get_pointerlock_status(&pointerlock_event);
+
+  if (!pointerlock_event.isActive) emscripten_request_pointerlock("canvas", false);
+  
   return true;
 }
 
@@ -119,16 +162,18 @@ int main () {
 
   emscripten_webgl_make_context_current(context);
 
-  // we only need one vertex attribute buffer
   glGenBuffers(1, &buffer);
   glBindBuffer(GL_ARRAY_BUFFER, buffer);
-  const GLfloat bufferData[] {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
-  glBufferData(GL_ARRAY_BUFFER, sizeof(bufferData), bufferData, GL_STATIC_DRAW);
+  const GLfloat kBufferData[] {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
+  glBufferData(GL_ARRAY_BUFFER, sizeof(kBufferData), kBufferData, GL_STATIC_DRAW);
 
   quad_shader = load_shader(GL_VERTEX_SHADER, "rsrc/quad.vert");
   backdrop_program.reset(new shader_program("rsrc/backdrop.frag"));
+  paddle_program.reset(new shader_program("rsrc/paddle.frag"));
 
   std::atexit(cleanup);
+
+  device_pixel_ratio = emscripten_get_device_pixel_ratio();
 
   EmscriptenFullscreenStrategy strategy {
     EMSCRIPTEN_FULLSCREEN_SCALE_STRETCH,
@@ -138,6 +183,7 @@ int main () {
   emscripten_enter_soft_fullscreen("canvas", &strategy);
 
   emscripten_set_mousemove_callback("canvas", nullptr, false, on_mouse_move);
+  emscripten_set_mousedown_callback("canvas", nullptr, false, on_mouse_down);
 
   emscripten_request_animation_frame_loop(main_loop, nullptr);
 }
