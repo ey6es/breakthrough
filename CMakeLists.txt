@@ -10,7 +10,7 @@ include_directories(include)
 
 add_compile_definitions(_USE_MATH_DEFINES)
 
-add_executable(breakthrough src/app.cpp)
+add_executable(breakthrough src/app.cpp src/logic.cpp)
 target_compile_options(breakthrough PUBLIC -O3)
 target_link_options(breakthrough PUBLIC
   --embed-file ${CMAKE_SOURCE_DIR}/rsrc@rsrc
