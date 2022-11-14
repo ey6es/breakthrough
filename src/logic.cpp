@@ -215,6 +215,10 @@ float get_player_position () {
   return player_position;
 }
 
+bool get_block_state (int row, int col) {
+  return block_states.test(row * kFieldCols + col);
+}
+
 void maybe_release_player_ball () {
   balls[kPlayerBallIndex].maybe_release();
 }
