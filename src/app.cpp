@@ -13,10 +13,11 @@
 namespace {
 
 EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context;
-int canvas_width, canvas_height, viewport_width, viewport_height;
+int canvas_width, canvas_height, canvas_offset = 0;
 float device_pixel_ratio;
 GLuint buffer;
 GLuint quad_shader;
+GLuint block_texture;
 
 EM_BOOL main_loop (double time, void* user_data) {
   static double last_time = time;
@@ -26,8 +27,6 @@ EM_BOOL main_loop (double time, void* user_data) {
 
   emscripten_webgl_make_context_current(context);
 
-  glClear(GL_COLOR_BUFFER_BIT);
-
   tick(dt);
 
   return true;
@@ -36,18 +35,13 @@ EM_BOOL main_loop (double time, void* user_data) {
 EM_BOOL on_canvas_resized (int event_type, const void* reserved, void* user_data) {
   emscripten_get_canvas_element_size("canvas", &canvas_width, &canvas_height);
 
+  double w, h;
+  emscripten_get_element_css_size("canvas", &w, &h);
+  canvas_offset = ((int)w - canvas_width) / 2;
+
   emscripten_webgl_make_context_current(context);
 
-  auto canvas_aspect = (float)canvas_width / canvas_height;
-  if (canvas_aspect > kAspect) {
-    viewport_width = (int)(canvas_height * kAspect);
-    viewport_height = canvas_height;
-    glViewport((canvas_width - viewport_width) / 2, 0, viewport_width, viewport_height);
-  } else {
-    viewport_width = canvas_width;
-    viewport_height = (int)(canvas_width / kAspect);
-    glViewport(0, (canvas_height - viewport_height) / 2, viewport_width, viewport_height);
-  }
+  glViewport(0, 0, canvas_width, canvas_height);
 
   return true;
 }
@@ -57,9 +51,9 @@ EM_BOOL on_mouse_move (int event_type, const EmscriptenMouseEvent* mouse_event, 
   emscripten_get_pointerlock_status(&pointerlock_event);
 
   if (pointerlock_event.isActive) {
-    set_player_position(get_player_position() + mouse_event->movementX * device_pixel_ratio / viewport_width);
+    set_player_position(get_player_position() + mouse_event->movementX * device_pixel_ratio / canvas_width);
   } else {
-    set_player_position((mouse_event->targetX * device_pixel_ratio - canvas_width / 2.0) / viewport_width);
+    set_player_position((mouse_event->targetX - canvas_offset) * device_pixel_ratio / canvas_width - 0.5f);
   }
 
   return true;
@@ -98,7 +92,8 @@ void cleanup () {
 
   glDeleteBuffers(1, &buffer);
   glDeleteShader(quad_shader);
-}
+  glDeleteTextures(1, &block_texture);
+} 
 
 }
 
@@ -120,13 +115,27 @@ int main () {
   backdrop_program.reset(new shader_program("rsrc/backdrop.frag"));
   paddle_program.reset(new shader_program("rsrc/paddle.frag"));
   ball_program.reset(new shader_program("rsrc/ball.frag"));
+  blocks_program.reset(new shader_program("rsrc/blocks.frag"));
+
+  glGenTextures(1, &block_texture);
+  glBindTexture(GL_TEXTURE_2D, block_texture);
+  reset_blocks();
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   std::atexit(cleanup);
 
   device_pixel_ratio = emscripten_get_device_pixel_ratio();
 
+  emscripten_set_canvas_element_size("canvas", canvas_width = kAspect * 160, canvas_height = 160);
+
   EmscriptenFullscreenStrategy strategy {
-    EMSCRIPTEN_FULLSCREEN_SCALE_STRETCH,
+    EMSCRIPTEN_FULLSCREEN_SCALE_ASPECT,
     EMSCRIPTEN_FULLSCREEN_CANVAS_SCALE_HIDEF,
     EMSCRIPTEN_FULLSCREEN_FILTERING_NEAREST,
     on_canvas_resized, nullptr};
@@ -138,9 +147,24 @@ int main () {
   emscripten_request_animation_frame_loop(main_loop, nullptr);
 }
 
-std::unique_ptr<shader_program> backdrop_program;
-std::unique_ptr<shader_program> paddle_program;
-std::unique_ptr<shader_program> ball_program;
+void reset_blocks () {
+  unsigned char texture_data[kFieldRows * kFieldCols * 4];
+  unsigned char* it = texture_data;
+  for (auto row = 0; row < kFieldRows; ++row) {
+    for (auto col = 0; col < kFieldCols; ++col) {
+      *it++ = 0x80;
+      *it++ = 0x80;
+      *it++ = 0x80;
+      *it++ = 0xFF;
+    }
+  }
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kFieldCols, kFieldRows, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture_data);
+}
+
+void clear_block (int row, int col) {
+  unsigned char texture_data[] {0, 0, 0, 0};
+  glTexSubImage2D(GL_TEXTURE_2D, 0, col, row, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, texture_data);
+}
 
 shader_program::shader_program (const char* fragment_filename) {
     program_ = glCreateProgram();
@@ -149,6 +173,11 @@ shader_program::shader_program (const char* fragment_filename) {
     glLinkProgram(program_);
     vertex_location_ = glGetAttribLocation(program_, "vertex");
     matrix_location_ = glGetUniformLocation(program_, "matrix");
+    auto texture_location = glGetUniformLocation(program_, "texture");
+    if (texture_location != -1) {
+      glUseProgram(program_);
+      glUniform1i(texture_location, 0);
+    }
   }
 
 shader_program::~shader_program () {
@@ -157,7 +186,7 @@ shader_program::~shader_program () {
   glDeleteShader(fragment_shader_);
 }
 
-void shader_program::draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) {
+void shader_program::draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) const {
   glUseProgram(program_);
   constexpr GLfloat kXScale = 2.0f;
   constexpr GLfloat kYScale = kAspect * 2.0f;
@@ -167,3 +196,8 @@ void shader_program::draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) {
   glVertexAttribPointer(vertex_location_, 2, GL_FLOAT, false, 0, nullptr);
   glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 }
+
+std::unique_ptr<shader_program> backdrop_program;
+std::unique_ptr<shader_program> paddle_program;
+std::unique_ptr<shader_program> ball_program;
+std::unique_ptr<shader_program> blocks_program;

@@ -6,12 +6,15 @@
 
 constexpr float kAspect = 9.0f / 16.0f;
 
+void reset_blocks ();
+void clear_block (int row, int col);
+
 class shader_program {
 public:
   shader_program (const char* fragment_filename);
   ~shader_program ();
 
-  void draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h);
+  void draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) const;
 
 private:
   GLuint program_;
@@ -23,5 +26,6 @@ private:
 extern std::unique_ptr<shader_program> backdrop_program;
 extern std::unique_ptr<shader_program> paddle_program;
 extern std::unique_ptr<shader_program> ball_program;
+extern std::unique_ptr<shader_program> blocks_program;
 
 #endif // APP_H
