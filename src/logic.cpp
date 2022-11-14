@@ -1,7 +1,10 @@
 #include <algorithm>
+#include <array>
 #include <bitset>
+#include <chrono>
 #include <cmath>
 #include <iostream>
+#include <random>
 
 #include "app.hpp"
 #include "logic.hpp"
@@ -11,6 +14,7 @@ namespace {
 constexpr float kPaddleWidth = 0.2f;
 constexpr float kPaddleHeight = 0.05f;
 constexpr float kPaddleY = 0.5f / kAspect - kPaddleHeight * 0.5f;
+constexpr float kMaxPaddleX = 0.5f - kPaddleWidth * 0.5f;
 
 constexpr float kBallRadius = 0.025f;
 constexpr float kBallDiameter = kBallRadius * 2.0f;
@@ -58,6 +62,11 @@ T clamp (T value, T min, T max) {
 class Ball {
 public:
   Ball (bool player_owned) : player_owned_(player_owned) {}
+
+  const vec2& get_position () const { return position_; }
+  const vec2& get_velocity () const { return velocity_; }
+
+  bool is_attached () const { return attached_; }
 
   void maybe_release () {
     if (!attached_) return;
@@ -166,11 +175,40 @@ private:
   }
 } balls[] {false, true};
 
+void tick_computer (float dt) {
+  static float target_position = 0.0f;
+  auto& own_ball = balls[kComputerBallIndex];
+  if (own_ball.is_attached()) {
+    static bool target_position_initialized = false;
+    if (!target_position_initialized) {
+      static std::default_random_engine engine(std::chrono::system_clock::now().time_since_epoch().count());
+      target_position = std::uniform_real_distribution<float>(-kMaxPaddleX, kMaxPaddleX)(engine);
+      target_position_initialized = true;
+    }
+    if (computer_position == target_position) {
+      own_ball.maybe_release();
+      target_position_initialized = false;
+    }
+  } else {
+    auto it = std::max_element(std::begin(balls), std::end(balls), [](auto& a, auto& b) {
+      return
+        (a.get_position().y > 0.0f) < (b.get_position().y > 0.0f) || // on our side
+        (a.get_velocity().y > 0.0f) < (b.get_velocity().y > 0.0f) || // approaching us
+        a.get_position().y < b.get_position().y; // closer
+    });
+    target_position = it->get_position().x;
+  }
+  constexpr float kComputerSpeed = 0.35f;
+  auto velocity = (computer_position < target_position) ? kComputerSpeed : -kComputerSpeed;
+  computer_position = (computer_position < target_position)
+    ? std::min(computer_position + kComputerSpeed * dt, target_position)
+    : std::max(computer_position - kComputerSpeed * dt, target_position);
+}
+
 }
 
 void set_player_position (float position) {
-  constexpr float kMaxPos = 0.5f - kPaddleWidth * 0.5f;
-  player_position = clamp(position, -kMaxPos, kMaxPos);
+  player_position = clamp(position, -kMaxPaddleX, kMaxPaddleX);
 }
 
 float get_player_position () {
@@ -183,6 +221,8 @@ void maybe_release_player_ball () {
 
 void tick (float dt) {
   backdrop_program->draw_quad(0.0f, 0.0f, 1.0f, 1.0f / kAspect);
+
+  tick_computer(dt);
 
   paddle_program->draw_quad(computer_position, kPaddleY, kPaddleWidth, kPaddleHeight);
   paddle_program->draw_quad(player_position, -kPaddleY, kPaddleWidth, kPaddleHeight);
