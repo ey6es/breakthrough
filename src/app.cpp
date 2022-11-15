@@ -208,6 +208,7 @@ shader_program::shader_program (const char* fragment_filename) {
     glLinkProgram(program_);
     vertex_location_ = glGetAttribLocation(program_, "vertex");
     matrix_location_ = glGetUniformLocation(program_, "matrix");
+    aspect_location_ = glGetUniformLocation(program_, "aspect");
     auto texture_location = glGetUniformLocation(program_, "texture");
     if (texture_location != -1) {
       glUseProgram(program_);
@@ -229,6 +230,7 @@ void shader_program::draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) cons
   constexpr GLfloat kYScale = kAspect * 2.0f;
   GLfloat matrix[] = {w * kXScale, 0.0f, 0.0f, 0.0f, h * kYScale, 0.0f, x * kXScale, y * kYScale, 1.0f};
   glUniformMatrix3fv(matrix_location_, 1, false, matrix);
+  glUniform1f(aspect_location_, w / h);
   glEnableVertexAttribArray(vertex_location_);
   glVertexAttribPointer(vertex_location_, 2, GL_FLOAT, false, 0, nullptr);
   glDrawArrays(GL_TRIANGLE_FAN, 0, 4);

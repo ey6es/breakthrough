@@ -129,8 +129,8 @@ private:
     check_segment_collision(vec2(0.5f, kMaxY), vec2(0.5f, -kMaxY));
 
     // check against paddles
-    check_quad_collision(computer_position, kPaddleY, kPaddleWidth, kPaddleHeight);
-    check_quad_collision(player_position, -kPaddleY, kPaddleWidth, kPaddleHeight);
+    check_paddle_collision(computer_position, kPaddleY);
+    check_paddle_collision(player_position, -kPaddleY);
   }
 
   bool check_quad_collision (float x, float y, float w, float h) {
@@ -151,20 +151,12 @@ private:
 
     auto dir_dot = ap.dot(ab);
     auto length_squared = ab.length_squared();
-    if (dir_dot < 0.0f) return check_point_collision(a);
-    else if (dir_dot > length_squared) return check_point_collision(b);
+    vec2 closest;
+    if (dir_dot < 0.0f) closest = a;
+    else if (dir_dot > length_squared) closest = b;
+    else closest = a + ab * (dir_dot / length_squared); 
 
-    auto length = std::sqrt(length_squared);
-    auto penetration = kBallRadius - normal_dot / length;
-    if (penetration <= 0.0f) return false;
-    normal /= length;
-    position_ += normal * penetration;
-    velocity_ = (-velocity_).reflect(normal);
-    return true;
-  }
-
-  bool check_point_collision (const vec2& a) {
-    auto normal = position_ - a;
+    normal = position_ - closest;
     auto length = normal.length();
     auto penetration = kBallRadius - length;
     if (penetration <= 0.0f) return false;
@@ -172,6 +164,31 @@ private:
     position_ += normal * penetration;
     velocity_ = (-velocity_).reflect(normal);
     return true;
+  }
+
+  void check_paddle_collision (float x, float y) {
+    vec2 a(x - kPaddleWidth * 0.5f, y);
+    vec2 b(x + kPaddleWidth * 0.5f, y);
+    auto ap = position_ - a;
+    auto ab = b - a;
+    
+    auto dir_dot = ap.dot(ab);
+    auto length_squared = ab.length_squared();
+    vec2 closest;
+    if (dir_dot < 0.0f) closest = a;
+    else if (dir_dot > length_squared) closest = b;
+    else closest = a + ab * (dir_dot / length_squared);
+
+    auto normal = position_ - closest;
+    auto length = normal.length();
+    auto penetration = kBallRadius + kPaddleHeight * 0.5f - length;
+    if (penetration <= 0.0f) return;
+    normal /= length;
+    position_ += normal * penetration;
+
+    constexpr float kCurveFactor = 0.5f / kPaddleWidth;
+    normal.x += (closest.x - x) * kCurveFactor;
+    velocity_ = (-velocity_).reflect(normal.normalize());
   }
 } balls[] {false, true};
 
