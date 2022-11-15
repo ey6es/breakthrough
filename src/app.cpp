@@ -14,7 +14,8 @@ namespace {
 
 EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context;
 bool context_lost = false;
-int canvas_width, canvas_height, canvas_offset = 0;
+int canvas_width, canvas_height;
+double canvas_offset = 0.0;
 float device_pixel_ratio;
 GLuint buffer;
 GLuint quad_shader;
@@ -85,13 +86,17 @@ EM_BOOL on_canvas_resized (int event_type, const void* reserved, void* user_data
 
   double w, h;
   emscripten_get_element_css_size("canvas", &w, &h);
-  canvas_offset = ((int)w - canvas_width) / 2;
+  canvas_offset = (w * device_pixel_ratio  - canvas_width) * 0.5;
 
   emscripten_webgl_make_context_current(context);
 
   glViewport(0, 0, canvas_width, canvas_height);
 
   return true;
+}
+
+void update_player_position (int target_x) {
+  set_player_position((target_x * device_pixel_ratio - canvas_offset) / canvas_width - 0.5f);
 }
 
 EM_BOOL on_mouse_move (int event_type, const EmscriptenMouseEvent* mouse_event, void* user_data) {
@@ -101,7 +106,7 @@ EM_BOOL on_mouse_move (int event_type, const EmscriptenMouseEvent* mouse_event, 
   if (pointerlock_event.isActive) {
     set_player_position(get_player_position() + mouse_event->movementX * device_pixel_ratio / canvas_width);
   } else {
-    set_player_position((mouse_event->targetX - canvas_offset) * device_pixel_ratio / canvas_width - 0.5f);
+    update_player_position(mouse_event->targetX);
   }
 
   return true;
@@ -115,6 +120,17 @@ EM_BOOL on_mouse_down (int event_type, const EmscriptenMouseEvent* mouse_event, 
 
   maybe_release_player_ball();
 
+  return true;
+}
+
+EM_BOOL on_touch_start (int event_type, const EmscriptenTouchEvent* touch_event, void* user_data) {
+  update_player_position(touch_event->touches[0].targetX);
+  maybe_release_player_ball();
+  return true;
+}
+
+EM_BOOL on_touch_move (int event_type, const EmscriptenTouchEvent* touch_event, void* user_data) {
+  update_player_position(touch_event->touches[0].targetX);
   return true;
 }
 
@@ -165,6 +181,9 @@ int main () {
 
   emscripten_set_mousemove_callback("canvas", nullptr, false, on_mouse_move);
   emscripten_set_mousedown_callback("canvas", nullptr, false, on_mouse_down);
+
+  emscripten_set_touchstart_callback("canvas", nullptr, true, on_touch_start);
+  emscripten_set_touchmove_callback("canvas", nullptr, true, on_touch_move);
 
   emscripten_set_webglcontextlost_callback("canvas", nullptr, false, on_webglcontext_lost);
   emscripten_set_webglcontextrestored_callback("canvas", nullptr, false, on_webglcontext_restored);
