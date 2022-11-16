@@ -14,6 +14,9 @@ public:
   shader_program (const char* fragment_filename);
   ~shader_program ();
 
+  void set_uniform (const char* name, int value) const;
+  void set_uniform (const char* name, float value) const;
+
   void draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) const;
 
 private:

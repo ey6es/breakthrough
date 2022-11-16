@@ -220,6 +220,7 @@ void tick_computer (float dt) {
   computer_position = (computer_position < target_position)
     ? std::min(computer_position + kComputerSpeed * dt, target_position)
     : std::max(computer_position - kComputerSpeed * dt, target_position);
+  computer_position = clamp(computer_position, -kMaxPaddleX, kMaxPaddleX);
 }
 
 }

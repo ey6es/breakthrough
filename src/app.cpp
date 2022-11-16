@@ -65,7 +65,11 @@ void init_context () {
   backdrop_program.reset(new shader_program("rsrc/backdrop.frag"));
   paddle_program.reset(new shader_program("rsrc/paddle.frag"));
   ball_program.reset(new shader_program("rsrc/ball.frag"));
+
   blocks_program.reset(new shader_program("rsrc/blocks.frag"));
+  blocks_program->set_uniform("texture", 0);
+  blocks_program->set_uniform("field_rows", (float)kFieldRows);
+  blocks_program->set_uniform("field_cols", (float)kFieldCols);
 
   glGenTextures(1, &block_texture);
   glBindTexture(GL_TEXTURE_2D, block_texture);
@@ -228,11 +232,6 @@ shader_program::shader_program (const char* fragment_filename) {
     vertex_location_ = glGetAttribLocation(program_, "vertex");
     matrix_location_ = glGetUniformLocation(program_, "matrix");
     aspect_location_ = glGetUniformLocation(program_, "aspect");
-    auto texture_location = glGetUniformLocation(program_, "texture");
-    if (texture_location != -1) {
-      glUseProgram(program_);
-      glUniform1i(texture_location, 0);
-    }
   }
 
 shader_program::~shader_program () {
@@ -241,6 +240,18 @@ shader_program::~shader_program () {
   emscripten_webgl_make_context_current(context);
   glDeleteProgram(program_);
   glDeleteShader(fragment_shader_);
+}
+
+void shader_program::set_uniform (const char* name, int value) const {
+  auto location = glGetUniformLocation(program_, name);
+  glUseProgram(program_);
+  glUniform1i(location, value);
+}
+
+void shader_program::set_uniform (const char* name, float value) const {
+  auto location = glGetUniformLocation(program_, name);
+  glUseProgram(program_);
+  glUniform1f(location, value);
 }
 
 void shader_program::draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) const {
