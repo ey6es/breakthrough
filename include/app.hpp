@@ -25,6 +25,7 @@ private:
   GLint vertex_location_;
   GLint matrix_location_;
   GLint aspect_location_;
+  GLint time_location_;
 };
 
 extern std::unique_ptr<shader_program> backdrop_program;

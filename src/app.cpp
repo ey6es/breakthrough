@@ -20,10 +20,11 @@ float device_pixel_ratio;
 GLuint buffer;
 GLuint quad_shader;
 GLuint block_texture;
+double last_time;
 
-EM_BOOL main_loop (double time, void* user_data) {
-  static double last_time = time;
-  constexpr double kSecondsPerMillisecond = 1.0 / 1000.0;
+constexpr double kSecondsPerMillisecond = 1.0 / 1000.0;
+
+EM_BOOL main_loop (double time, void* user_data) {  
   double dt = (time - last_time) * kSecondsPerMillisecond;
   last_time = time;
 
@@ -82,6 +83,7 @@ void init_context () {
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+  last_time = emscripten_performance_now();
   emscripten_request_animation_frame_loop(main_loop, nullptr);
 }
 
@@ -232,6 +234,7 @@ shader_program::shader_program (const char* fragment_filename) {
     vertex_location_ = glGetAttribLocation(program_, "vertex");
     matrix_location_ = glGetUniformLocation(program_, "matrix");
     aspect_location_ = glGetUniformLocation(program_, "aspect");
+    time_location_ = glGetUniformLocation(program_, "time");
   }
 
 shader_program::~shader_program () {
@@ -261,6 +264,7 @@ void shader_program::draw_quad (GLfloat x, GLfloat y, GLfloat w, GLfloat h) cons
   GLfloat matrix[] = {w * kXScale, 0.0f, 0.0f, 0.0f, h * kYScale, 0.0f, x * kXScale, y * kYScale, 1.0f};
   glUniformMatrix3fv(matrix_location_, 1, false, matrix);
   glUniform1f(aspect_location_, w / h);
+  if (time_location_ != -1) glUniform1f(time_location_, last_time * kSecondsPerMillisecond);
   glEnableVertexAttribArray(vertex_location_);
   glVertexAttribPointer(vertex_location_, 2, GL_FLOAT, false, 0, nullptr);
   glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
