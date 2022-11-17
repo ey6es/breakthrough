@@ -23,5 +23,11 @@ void main (void) {
     mix(vec2(abs_coord.x, 0.0), vec2(0.0, abs_coord.y), step(abs_coord.x, abs_coord.y)) /
     kBevelRadius;
   vec3 normal = vec3(signed_coord, sqrt(1.0 - dot(signed_coord, signed_coord)));
-  gl_FragColor = vec4(normal * 0.5 + vec3(0.5), texture2D(texture, tex_coord).a);
+
+  const float kAmbient = 0.35;
+  const vec3 kLightVector = vec3(0.57735, 0.57735, 0.57735);
+  vec4 color = texture2D(texture, tex_coord);
+  gl_FragColor = vec4(
+      color.rgb * (kAmbient + (1.0 - kAmbient) * max(dot(normal, kLightVector), 0.0)),
+      color.a);
 }

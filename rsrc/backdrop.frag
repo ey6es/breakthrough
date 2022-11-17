@@ -19,5 +19,11 @@ void main (void) {
   vec3 normal = (z2 < 0.0)
     ? vec3(0.0, 0.0, 1.0)
     : normalize(vec3(-dimple_coord, sqrt(z2) * kFlattening));
-  gl_FragColor = vec4(normal * 0.5 + vec3(0.5), 1.0);
+
+  const vec3 kDiffuseColor = vec3(0.2, 0.2, 0.2);
+  const float kAmbient = 0.35;
+  const vec3 kLightVector = vec3(0.57735, 0.57735, 0.57735);
+  gl_FragColor = vec4(
+      kDiffuseColor * (kAmbient + (1.0 - kAmbient) * max(dot(normal, kLightVector), 0.0)),
+      1.0);
 }
