@@ -13,6 +13,7 @@ add_compile_definitions(_USE_MATH_DEFINES)
 add_executable(breakthrough src/app.cpp src/logic.cpp)
 target_compile_options(breakthrough PUBLIC -O3)
 target_link_options(breakthrough PUBLIC
+  -lopenal
   --embed-file ${CMAKE_SOURCE_DIR}/rsrc@rsrc
   --shell-file ${CMAKE_SOURCE_DIR}/public/index.template.html)
 set_target_properties(breakthrough PROPERTIES OUTPUT_NAME index)

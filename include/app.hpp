@@ -9,6 +9,8 @@ constexpr float kAspect = 9.0f / 16.0f;
 void reset_blocks ();
 void clear_block (int row, int col);
 
+void play_tick ();
+
 class shader_program {
 public:
   shader_program (const char* fragment_filename);

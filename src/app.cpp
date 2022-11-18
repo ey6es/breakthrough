@@ -1,25 +1,38 @@
+#include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <random>
 #include <string>
 #include <vector>
 
 #include <emscripten.h>
 #include <emscripten/html5.h>
 
+#include <AL/alc.h>
+#include <AL/al.h>
+
 #include "app.hpp"
 #include "logic.hpp"
 
 namespace {
 
-EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context;
-bool context_lost = false;
+EMSCRIPTEN_WEBGL_CONTEXT_HANDLE webgl_context;
+bool webgl_context_lost = false;
 int canvas_width, canvas_height;
 double canvas_offset = 0.0;
 float device_pixel_ratio;
 GLuint buffer;
 GLuint quad_shader;
 GLuint block_texture;
+
+ALCdevice* audio_device;
+ALCcontext* audio_context;
+ALuint tick_buffer;
+ALuint tick_source;
+
 double last_time;
 
 constexpr double kSecondsPerMillisecond = 1.0 / 1000.0;
@@ -28,9 +41,9 @@ EM_BOOL main_loop (double time, void* user_data) {
   double dt = (time - last_time) * kSecondsPerMillisecond;
   last_time = time;
 
-  if (context_lost) return false;
+  if (webgl_context_lost) return false;
 
-  emscripten_webgl_make_context_current(context);
+  emscripten_webgl_make_context_current(webgl_context);
 
   tick(dt);
 
@@ -55,7 +68,7 @@ GLuint load_shader (GLenum shader_type, const char* filename) {
 }
 
 void init_context () {
-  emscripten_webgl_make_context_current(context);
+  emscripten_webgl_make_context_current(webgl_context);
 
   glGenBuffers(1, &buffer);
   glBindBuffer(GL_ARRAY_BUFFER, buffer);
@@ -87,6 +100,21 @@ void init_context () {
   emscripten_request_animation_frame_loop(main_loop, nullptr);
 }
 
+ALuint create_audio_buffer () {
+  ALuint buffer;
+  alGenBuffers(1, &buffer);
+
+  constexpr int kBufferFrequency = 44100;
+  std::int16_t buffer_data[kBufferFrequency / 100];
+  static std::default_random_engine engine(std::chrono::system_clock::now().time_since_epoch().count());
+  std::uniform_int_distribution<std::int16_t> distribution(std::numeric_limits<std::int16_t>().min());
+  for (auto& sample : buffer_data) sample = distribution(engine);
+
+  alBufferData(buffer, AL_FORMAT_MONO16, buffer_data, sizeof(buffer_data), kBufferFrequency);
+
+  return buffer;
+}
+
 EM_BOOL on_canvas_resized (int event_type, const void* reserved, void* user_data) {
   emscripten_get_canvas_element_size("canvas", &canvas_width, &canvas_height);
 
@@ -94,7 +122,7 @@ EM_BOOL on_canvas_resized (int event_type, const void* reserved, void* user_data
   emscripten_get_element_css_size("canvas", &w, &h);
   canvas_offset = (w * device_pixel_ratio  - canvas_width) * 0.5;
 
-  emscripten_webgl_make_context_current(context);
+  emscripten_webgl_make_context_current(webgl_context);
 
   glViewport(0, 0, canvas_width, canvas_height);
 
@@ -141,24 +169,32 @@ EM_BOOL on_touch_move (int event_type, const EmscriptenTouchEvent* touch_event, 
 }
 
 EM_BOOL on_webglcontext_lost (int event_type, const void* reserved, void* user_data) {
-  context_lost = true;
+  webgl_context_lost = true;
   return true;
 }
 
 EM_BOOL on_webglcontext_restored (int event_type, const void* reserved, void* user_data) {
   init_context();
-  context_lost = false;
+  webgl_context_lost = false;
   return true;
 }
 
 void cleanup () {
-  if (context_lost) return;
+  if (webgl_context_lost) return;
 
-  emscripten_webgl_make_context_current(context);
+  emscripten_webgl_make_context_current(webgl_context);
 
   glDeleteBuffers(1, &buffer);
   glDeleteShader(quad_shader);
   glDeleteTextures(1, &block_texture);
+
+  alcMakeContextCurrent(audio_context);
+  alDeleteBuffers(1, &tick_buffer);
+  alDeleteSources(1, &tick_source);
+
+  alcMakeContextCurrent(nullptr);
+  alcDestroyContext(audio_context);
+  alcCloseDevice(audio_device);
 } 
 
 }
@@ -168,9 +204,18 @@ int main () {
   emscripten_webgl_init_context_attributes(&attributes);
   attributes.alpha = false;
   attributes.depth = false;
-  context = emscripten_webgl_create_context("canvas", &attributes);
+  webgl_context = emscripten_webgl_create_context("canvas", &attributes);
 
   init_context();
+
+  audio_device = alcOpenDevice(nullptr);
+  audio_context = alcCreateContext(audio_device, nullptr);
+  alcMakeContextCurrent(audio_context);
+
+  tick_buffer = create_audio_buffer();
+
+  alGenSources(1, &tick_source);
+  alSourcei(tick_source, AL_BUFFER, tick_buffer);
 
   std::atexit(cleanup);
 
@@ -226,6 +271,11 @@ void clear_block (int row, int col) {
   glTexSubImage2D(GL_TEXTURE_2D, 0, col, row, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, texture_data);
 }
 
+void play_tick () {
+  alSourceRewind(tick_source);
+  alSourcePlay(tick_source);
+}
+
 shader_program::shader_program (const char* fragment_filename) {
     program_ = glCreateProgram();
     glAttachShader(program_, quad_shader);
@@ -238,9 +288,9 @@ shader_program::shader_program (const char* fragment_filename) {
   }
 
 shader_program::~shader_program () {
-  if (context_lost) return;
+  if (webgl_context_lost) return;
 
-  emscripten_webgl_make_context_current(context);
+  emscripten_webgl_make_context_current(webgl_context);
   glDeleteProgram(program_);
   glDeleteShader(fragment_shader_);
 }

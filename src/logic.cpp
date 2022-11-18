@@ -163,6 +163,8 @@ private:
     normal /= length;
     position_ += normal * penetration;
     velocity_ = (-velocity_).reflect(normal);
+    
+    play_tick();
     return true;
   }
 
@@ -189,6 +191,8 @@ private:
     constexpr float kCurveFactor = 0.5f / kPaddleWidth;
     normal.x += (closest.x - x) * kCurveFactor;
     velocity_ = (-velocity_).reflect(normal.normalize());
+
+    play_tick();
   }
 } balls[] {false, true};
 
