@@ -264,7 +264,7 @@ int main () {
   EmscriptenFullscreenStrategy strategy {
     EMSCRIPTEN_FULLSCREEN_SCALE_ASPECT,
     EMSCRIPTEN_FULLSCREEN_CANVAS_SCALE_HIDEF,
-    EMSCRIPTEN_FULLSCREEN_FILTERING_NEAREST,
+    EMSCRIPTEN_FULLSCREEN_FILTERING_DEFAULT,
     on_canvas_resized, nullptr};
   emscripten_enter_soft_fullscreen("canvas", &strategy);
 
