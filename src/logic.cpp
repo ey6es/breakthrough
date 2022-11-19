@@ -72,6 +72,7 @@ public:
     if (!attached_) return;
     velocity_ = vec2(M_SQRT1_2, M_SQRT1_2) * kBallSpeed * (player_owned_ ? 1.0f : -1.0f);
     attached_ = false;
+    play_launch(player_owned_);
   }
 
   void tick (float dt) {
@@ -98,6 +99,7 @@ private:
     constexpr float kMaxY = 0.5f / kAspect + kBallRadius;
     if (position_.y < -kMaxY || position_.y > kMaxY) {
       attached_ = true;
+      play_loss(player_owned_);
       return;
     }
     // check against blocks
@@ -163,8 +165,8 @@ private:
     normal /= length;
     position_ += normal * penetration;
     velocity_ = (-velocity_).reflect(normal);
-    
-    play_tick();
+
+    play_bounce(player_owned_);
     return true;
   }
 
@@ -192,7 +194,7 @@ private:
     normal.x += (closest.x - x) * kCurveFactor;
     velocity_ = (-velocity_).reflect(normal.normalize());
 
-    play_tick();
+    play_bounce(player_owned_);
   }
 } balls[] {false, true};
 

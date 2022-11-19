@@ -1,9 +1,9 @@
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
-#include <limits>
 #include <random>
 #include <string>
 #include <vector>
@@ -30,8 +30,10 @@ GLuint block_texture;
 
 ALCdevice* audio_device;
 ALCcontext* audio_context;
-ALuint tick_buffer;
-ALuint tick_source;
+ALuint launch_buffer;
+ALuint bounce_buffer;
+ALuint loss_buffer;
+ALuint ball_sources[2];
 
 double last_time;
 
@@ -100,19 +102,52 @@ void init_context () {
   emscripten_request_animation_frame_loop(main_loop, nullptr);
 }
 
-ALuint create_audio_buffer () {
+constexpr int kBufferFrequency = 44100;
+
+
+ALuint create_random_buffer () {
   ALuint buffer;
   alGenBuffers(1, &buffer);
-
-  constexpr int kBufferFrequency = 44100;
-  std::int16_t buffer_data[kBufferFrequency / 100];
+  
+  constexpr float kDuration = 1 / 250.0f;
+  constexpr int kAmplitude = 8192;
+  std::int16_t buffer_data[(int)(kBufferFrequency * kDuration)];
   static std::default_random_engine engine(std::chrono::system_clock::now().time_since_epoch().count());
-  std::uniform_int_distribution<std::int16_t> distribution(std::numeric_limits<std::int16_t>().min());
+  std::uniform_int_distribution<std::int16_t> distribution(-kAmplitude, kAmplitude);
   for (auto& sample : buffer_data) sample = distribution(engine);
 
   alBufferData(buffer, AL_FORMAT_MONO16, buffer_data, sizeof(buffer_data), kBufferFrequency);
 
   return buffer;
+}
+
+ALuint create_ramp_buffer (float start, float end) {
+  ALuint buffer;
+  alGenBuffers(1, &buffer);
+
+  constexpr float kDuration = 1 / 10.0f;
+  constexpr float kAmplitude = 4096.0f;
+  std::int16_t buffer_data[(int)(kBufferFrequency * kDuration)];
+  auto frequency = start;
+  auto df = (end - start) / (kDuration * kBufferFrequency);
+  auto phase = 0.0f;
+  for (auto& sample : buffer_data) {
+    sample = (std::int16_t)(kAmplitude * std::sin(phase));
+    phase += (frequency * M_PI * 2) / kBufferFrequency;
+    frequency += df;
+  }
+  alBufferData(buffer, AL_FORMAT_MONO16, buffer_data, sizeof(buffer_data), kBufferFrequency);
+
+  return buffer;
+}
+
+void play_audio_buffer (int ball, ALuint buffer) {
+  auto source = ball_sources[ball];
+
+  alcMakeContextCurrent(audio_context);
+  alSourcei(source, AL_BUFFER, buffer);
+  alSourceRewind(source);
+  alSourcePlay(source);
 }
 
 EM_BOOL on_canvas_resized (int event_type, const void* reserved, void* user_data) {
@@ -189,8 +224,10 @@ void cleanup () {
   glDeleteTextures(1, &block_texture);
 
   alcMakeContextCurrent(audio_context);
-  alDeleteBuffers(1, &tick_buffer);
-  alDeleteSources(1, &tick_source);
+  alDeleteBuffers(1, &launch_buffer);
+  alDeleteBuffers(1, &bounce_buffer);
+  alDeleteBuffers(1, &loss_buffer);
+  alDeleteSources(sizeof(ball_sources) / sizeof(ball_sources[0]), ball_sources);
 
   alcMakeContextCurrent(nullptr);
   alcDestroyContext(audio_context);
@@ -212,11 +249,12 @@ int main () {
   audio_context = alcCreateContext(audio_device, nullptr);
   alcMakeContextCurrent(audio_context);
 
-  tick_buffer = create_audio_buffer();
+  launch_buffer = create_ramp_buffer(200, 2000);
+  bounce_buffer = create_random_buffer();
+  loss_buffer = create_ramp_buffer(2000, 200);
 
-  alGenSources(1, &tick_source);
-  alSourcei(tick_source, AL_BUFFER, tick_buffer);
-
+  alGenSources(sizeof(ball_sources) / sizeof(ball_sources[0]), ball_sources);
+  
   std::atexit(cleanup);
 
   device_pixel_ratio = emscripten_get_device_pixel_ratio();
@@ -271,9 +309,22 @@ void clear_block (int row, int col) {
   glTexSubImage2D(GL_TEXTURE_2D, 0, col, row, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, texture_data);
 }
 
-void play_tick () {
-  alSourceRewind(tick_source);
-  alSourcePlay(tick_source);
+void play_launch (int ball) {
+  play_audio_buffer(ball, launch_buffer);
+}
+
+void play_bounce (int ball) {
+  static double last_bounce_times[sizeof(ball_sources) / sizeof(ball_sources[0])] {};
+  auto& last_bounce_time = last_bounce_times[ball];
+  constexpr double kMinElapsed = 0.05;
+  if ((last_time - last_bounce_time) * kSecondsPerMillisecond >= kMinElapsed) {
+    play_audio_buffer(ball, bounce_buffer);
+    last_bounce_time = last_time;
+  }
+}
+
+void play_loss (int ball) {
+  play_audio_buffer(ball, loss_buffer);
 }
 
 shader_program::shader_program (const char* fragment_filename) {

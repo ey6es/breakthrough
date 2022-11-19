@@ -9,7 +9,9 @@ constexpr float kAspect = 9.0f / 16.0f;
 void reset_blocks ();
 void clear_block (int row, int col);
 
-void play_tick ();
+void play_launch (int ball);
+void play_bounce (int ball);
+void play_loss (int ball);
 
 class shader_program {
 public:
