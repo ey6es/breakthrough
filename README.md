@@ -23,5 +23,6 @@ make
 This builds into the top-level `dist` directory, after which you can use (for example, from the `build` directory)
 `emrun ../dist/index.html` to launch a browser tab running the game.
 
-## Future Enhancements
-Apart from general visual and audio improvements, the game would benefit from a scoring system.
+## TODO
+Apart from general visual and audio improvements, the game would benefit from a scoring system and more
+interesting/strategic opponent behavior.

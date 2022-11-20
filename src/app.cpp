@@ -28,6 +28,7 @@ GLuint buffer;
 GLuint quad_shader;
 GLuint block_texture;
 
+bool audio_enabled = false;
 ALCdevice* audio_device;
 ALCcontext* audio_context;
 ALuint launch_buffer;
@@ -142,6 +143,8 @@ ALuint create_ramp_buffer (float start, float end) {
 }
 
 void play_audio_buffer (int ball, ALuint buffer) {
+  if (!audio_enabled) return;
+
   auto source = ball_sources[ball];
 
   alcMakeContextCurrent(audio_context);
@@ -187,12 +190,14 @@ EM_BOOL on_mouse_down (int event_type, const EmscriptenMouseEvent* mouse_event, 
 
   if (!pointerlock_event.isActive) emscripten_request_pointerlock("canvas", false);
 
+  audio_enabled = true;
   maybe_release_player_ball();
 
   return true;
 }
 
 EM_BOOL on_touch_start (int event_type, const EmscriptenTouchEvent* touch_event, void* user_data) {
+  audio_enabled = true;
   update_player_position(touch_event->touches[0].targetX);
   maybe_release_player_ball();
   return true;
