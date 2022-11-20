@@ -164,9 +164,8 @@ private:
     if (penetration <= 0.0f) return false;
     normal /= length;
     position_ += normal * penetration;
-    velocity_ = (-velocity_).reflect(normal);
-
-    play_bounce(player_owned_);
+    
+    handle_bounce(normal);
     return true;
   }
 
@@ -192,7 +191,20 @@ private:
 
     constexpr float kCurveFactor = 0.5f / kPaddleWidth;
     normal.x += (closest.x - x) * kCurveFactor;
-    velocity_ = (-velocity_).reflect(normal.normalize());
+
+    handle_bounce(normal.normalize());
+  }
+
+  void handle_bounce (const vec2& normal) {
+    auto direction = (-velocity_).reflect(normal).normalize();
+    constexpr float kMinAngle = M_PI / 16;
+    auto max_cos = std::cos(kMinAngle);
+    if (std::abs(direction.x) > max_cos) {
+      direction.x = (direction.x < 0.0f) ? -max_cos : max_cos;
+      auto max_sin = std::sin(kMinAngle);
+      direction.y = (direction.y < 0.0f) ? -max_sin : max_sin;
+    }
+    velocity_ = direction * kBallSpeed;
 
     play_bounce(player_owned_);
   }
