@@ -28,8 +28,7 @@ GLuint buffer;
 GLuint quad_shader;
 GLuint block_texture;
 
-bool audio_enabled = false;
-ALCdevice* audio_device;
+ALCdevice* audio_device = nullptr;
 ALCcontext* audio_context;
 ALuint launch_buffer;
 ALuint bounce_buffer;
@@ -142,8 +141,22 @@ ALuint create_ramp_buffer (float start, float end) {
   return buffer;
 }
 
+void maybe_init_audio () {
+  if (audio_device) return;
+
+  audio_device = alcOpenDevice(nullptr);
+  audio_context = alcCreateContext(audio_device, nullptr);
+  alcMakeContextCurrent(audio_context);
+
+  launch_buffer = create_ramp_buffer(200, 2000);
+  bounce_buffer = create_random_buffer();
+  loss_buffer = create_ramp_buffer(2000, 200);
+
+  alGenSources(sizeof(ball_sources) / sizeof(ball_sources[0]), ball_sources);
+}
+
 void play_audio_buffer (int ball, ALuint buffer) {
-  if (!audio_enabled) return;
+  if (!audio_device) return;
 
   auto source = ball_sources[ball];
 
@@ -190,14 +203,14 @@ EM_BOOL on_mouse_down (int event_type, const EmscriptenMouseEvent* mouse_event, 
 
   if (!pointerlock_event.isActive) emscripten_request_pointerlock("canvas", false);
 
-  audio_enabled = true;
+  maybe_init_audio();
   maybe_release_player_ball();
 
   return true;
 }
 
 EM_BOOL on_touch_start (int event_type, const EmscriptenTouchEvent* touch_event, void* user_data) {
-  audio_enabled = true;
+  maybe_init_audio();
   update_player_position(touch_event->touches[0].targetX);
   maybe_release_player_ball();
   return true;
@@ -228,15 +241,17 @@ void cleanup () {
   glDeleteShader(quad_shader);
   glDeleteTextures(1, &block_texture);
 
-  alcMakeContextCurrent(audio_context);
-  alDeleteBuffers(1, &launch_buffer);
-  alDeleteBuffers(1, &bounce_buffer);
-  alDeleteBuffers(1, &loss_buffer);
-  alDeleteSources(sizeof(ball_sources) / sizeof(ball_sources[0]), ball_sources);
+  if (audio_device) {
+    alcMakeContextCurrent(audio_context);
+    alDeleteBuffers(1, &launch_buffer);
+    alDeleteBuffers(1, &bounce_buffer);
+    alDeleteBuffers(1, &loss_buffer);
+    alDeleteSources(sizeof(ball_sources) / sizeof(ball_sources[0]), ball_sources);
 
-  alcMakeContextCurrent(nullptr);
-  alcDestroyContext(audio_context);
-  alcCloseDevice(audio_device);
+    alcMakeContextCurrent(nullptr);
+    alcDestroyContext(audio_context);
+    alcCloseDevice(audio_device);
+  }
 } 
 
 }
@@ -250,16 +265,6 @@ int main () {
 
   init_context();
 
-  audio_device = alcOpenDevice(nullptr);
-  audio_context = alcCreateContext(audio_device, nullptr);
-  alcMakeContextCurrent(audio_context);
-
-  launch_buffer = create_ramp_buffer(200, 2000);
-  bounce_buffer = create_random_buffer();
-  loss_buffer = create_ramp_buffer(2000, 200);
-
-  alGenSources(sizeof(ball_sources) / sizeof(ball_sources[0]), ball_sources);
-  
   std::atexit(cleanup);
 
   device_pixel_ratio = emscripten_get_device_pixel_ratio();

@@ -170,8 +170,8 @@ private:
   }
 
   void check_paddle_collision (float x, float y) {
-    vec2 a(x - kPaddleWidth * 0.5f, y);
-    vec2 b(x + kPaddleWidth * 0.5f, y);
+    vec2 a(x - kPaddleWidth * 0.5f + kPaddleHeight * 0.5f, y);
+    vec2 b(x + kPaddleWidth * 0.5f - kPaddleHeight * 0.5f, y);
     auto ap = position_ - a;
     auto ab = b - a;
     
@@ -187,10 +187,15 @@ private:
     auto penetration = kBallRadius + kPaddleHeight * 0.5f - length;
     if (penetration <= 0.0f) return;
     normal /= length;
+    auto rel_pos = position_ - vec2(x, y);
     position_ += normal * penetration;
 
-    constexpr float kCurveFactor = 0.5f / kPaddleWidth;
-    normal.x += (closest.x - x) * kCurveFactor;
+    // for aim control purposes, treat the bounce normals as if the paddle were ellipsoidal
+    constexpr float kNormalRadius = kPaddleWidth * 0.5f + kBallRadius;
+    constexpr float kNormalScale = 0.25f;
+    normal = vec2(
+      rel_pos.x,
+      std::sqrt(kNormalRadius * kNormalRadius - rel_pos.x * rel_pos.x) * (rel_pos.y > 0.0f ? 1.0f : -1.0f) / kNormalScale);
 
     handle_bounce(normal.normalize());
   }
